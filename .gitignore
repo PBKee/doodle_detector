@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Virtual environments (machine-specific, large) ---
+.venv/
+venv/
+env/
+
+# --- App runtime data (do NOT commit) ---
+uploads/          # images uploaded through the UI
+detectors/        # trained detector snapshots
+*.pkl
+
+# --- Model weights / torch hub cache (large, re-downloaded) ---
+*.pt
+*.pth
+*.onnx
+.cache/
+
+# --- Datasets / imagery (large + license-restricted: keep out of the repo) ---
+*.tif
+*.tiff
+datasets/
+data/
+# Uncomment these if you also want to keep sample screenshots out:
+# *.png
+# *.jpg
+# *.jpeg
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

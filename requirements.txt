@@ -1,0 +1,14 @@
+# core (needed for the mock backbone / demo — runs anywhere, no GPU)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+numpy>=1.26
+pillow>=10.0
+scikit-learn>=1.4
+scipy>=1.11
+
+# real backbone (DINOv2 via torch.hub) — install the CUDA build for your box:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+# torch>=2.2
+
+# GeoTIFF / windowed reads + georeferenced output (optional, for real scenes)
+# rasterio>=1.3

@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Doodle Detector — ISR console</title>
+<style>
+  :root{
+    --bg:#0a0f13; --panel:#111b22; --panel2:#0e161c; --line:#1e2c35;
+    --ink:#dce8ee; --dim:#7f97a3; --faint:#4c6270;
+    --accent:#2dd4bf; --target:#f5a623; --confuser:#e879f9; --bground:#38bdf8;
+    --tp:#4ade80; --fp:#fb7185; --fn:#fbbf24; --danger:#fb7185;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:radial-gradient(1200px 600px at 80% -10%,#0f1e27 0%,transparent 60%),var(--bg);
+       color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+  header{display:flex;align-items:baseline;gap:16px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel2)}
+  header h1{font:600 15px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;margin:0;color:var(--accent)}
+  header h1 span{color:var(--dim)}
+  .meta{font:500 12px/1 var(--mono);color:var(--dim);letter-spacing:.04em}
+  .meta b{color:var(--ink);font-weight:600}
+  .wrap{display:grid;grid-template-columns:320px 1fr;height:calc(100% - 49px)}
+  aside{border-right:1px solid var(--line);background:var(--panel);padding:16px;overflow-y:auto}
+  main{padding:16px 18px;overflow-y:auto}
+  .block{margin-bottom:20px}
+  .block>.lbl{font:600 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
+              margin-bottom:9px;display:flex;justify-content:space-between;align-items:center}
+  .mini{position:relative;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--panel2);cursor:crosshair;line-height:0}
+  .mini canvas{width:100%;display:block}
+
+  input[type=text],select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+        border-radius:4px;padding:8px 9px;font:500 12px/1 var(--mono)}
+  input[type=text]:focus,select:focus{outline:none;border-color:var(--accent)}
+  .field{display:flex;gap:7px;margin-bottom:7px}
+  .field input{flex:1}
+  .field button,.field .btn{width:auto;flex:none}
+
+  /* detector memory readout */
+  .mem{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:9px 0 4px;text-align:center}
+  .mem div{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:6px 2px;font:600 13px/1.2 var(--mono)}
+  .mem div small{display:block;font:600 9px/1.4 var(--mono);color:var(--faint);letter-spacing:.06em;margin-top:2px}
+  .mem .vt{color:var(--target)} .mem .vf{color:var(--confuser)} .mem .vg{color:var(--bground)}
+  .mem .vk{color:var(--ink)} .mem .vi{color:var(--accent)}
+
+  .tools{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .tool{display:flex;align-items:center;gap:8px;padding:8px 9px;cursor:pointer;border:1px solid var(--line);
+        border-radius:4px;background:var(--panel2);font:600 12px/1 var(--sans);color:var(--dim);user-select:none}
+  .tool .dot{width:11px;height:11px;border-radius:50%;flex:none}
+  .tool[data-k="target"] .dot{background:var(--target)}
+  .tool[data-k="confuser"] .dot{background:var(--confuser)}
+  .tool[data-k="background"] .dot{background:var(--bground)}
+  .tool[data-k="erase"] .dot{background:transparent;border:1.5px solid var(--faint)}
+  .tool.on{color:var(--ink);background:#132029}
+  .tool[data-k="target"].on{border-color:var(--target)}
+  .tool[data-k="confuser"].on{border-color:var(--confuser)}
+  .tool[data-k="background"].on{border-color:var(--bground)}
+  .tool[data-k="erase"].on{border-color:var(--accent)}
+
+  .row{display:flex;align-items:center;gap:10px;margin:9px 0}
+  .row label{font:500 12px/1 var(--mono);color:var(--dim);min-width:78px}
+  .row output{font:600 12px/1 var(--mono);color:var(--ink);min-width:34px;text-align:right}
+  input[type=range]{flex:1;accent-color:var(--accent);height:3px}
+
+  button,.btn{font:600 12px/1 var(--sans);letter-spacing:.02em;color:var(--bg);background:var(--accent);
+              border:0;border-radius:4px;padding:10px 12px;cursor:pointer;width:100%;text-align:center}
+  button.ghost,.btn.ghost{background:transparent;color:var(--dim);border:1px solid var(--line)}
+  button.ghost:hover{color:var(--ink);border-color:var(--faint)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .btn-amber{background:var(--target)}
+  .split-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .split3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+
+  /* work area */
+  .modes{display:inline-flex;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .modes button{width:auto;background:var(--panel2);color:var(--dim);border-right:1px solid var(--line);border-radius:0;padding:7px 13px}
+  .modes button:last-child{border-right:0}
+  .modes button.on{color:var(--bg)}
+  .modes button[data-m="draw"].on{background:var(--target)}
+  .modes button[data-m="review"].on{background:var(--tp)}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px;flex-wrap:wrap}
+
+  .stage{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px}
+  .pane{border:1px solid var(--line);border-radius:6px;background:var(--panel2);overflow:hidden}
+  .pane .head{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);
+              font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+  .pane .head .k{color:var(--dim);font-weight:600;letter-spacing:.02em;text-transform:none}
+  .pane#doodlePane .head{color:var(--target)}
+  .pane#predPane .head{color:var(--accent)}
+  .canvas-host{position:relative;display:flex;align-items:center;justify-content:center;min-height:280px;padding:12px;
+               background:repeating-conic-gradient(#0c141a 0% 25%,#0a1015 0% 50%) 0/18px 18px}
+  .canvas-host canvas{position:absolute;border-radius:2px;touch-action:none}
+  .empty{color:var(--faint);font:500 13px/1.5 var(--mono);text-align:center;padding:40px 12px}
+
+  .hint{font:500 12px/1.5 var(--sans);color:var(--dim);margin:0 0 14px}
+  .hint b{color:var(--ink)}
+  .banner{padding:9px 12px;border-radius:4px;font:600 12px/1.4 var(--mono);background:#1a2a12;color:#a7e07a;
+          border:1px solid #2c4a1e;margin-bottom:12px;display:none}
+  .banner.err{background:#2a1315;color:#fca5a5;border-color:#4a1e22}
+
+  /* detector list */
+  .detlist{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}
+  .detrow{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--line);border-radius:4px;
+          background:var(--panel2);cursor:pointer;font:600 12px/1 var(--sans);color:var(--dim)}
+  .detrow .sw{width:11px;height:11px;border-radius:3px;flex:none}
+  .detrow .nm{flex:1;color:var(--ink)}
+  .detrow .ct{font:600 10px/1 var(--mono);color:var(--faint)}
+  .detrow .x{color:var(--faint);font:700 13px/1 var(--mono);padding:0 2px}
+  .detrow .x:hover{color:var(--danger)}
+  .detrow.on{border-color:var(--accent);background:#132029}
+  .detrow .badge{font:600 9px/1 var(--mono);letter-spacing:.08em;color:var(--bg);background:var(--accent);border-radius:3px;padding:2px 4px}
+  .runsel{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .runlbl{font:600 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+  .chip{display:inline-flex;align-items:center;gap:6px;font:600 12px/1 var(--sans);color:var(--dim);cursor:pointer;border:1px solid var(--line);border-radius:4px;padding:5px 9px}
+  .chip .sw{width:10px;height:10px;border-radius:3px}
+  .chip input{accent-color:var(--accent);margin:0}
+  .chip.on{color:var(--ink);border-color:var(--faint)}
+
+  .ttlsum{font:600 11px/1 var(--mono);letter-spacing:.08em;color:var(--faint);cursor:pointer}
+  .ttllist{margin-top:6px;display:flex;flex-direction:column;gap:3px;max-height:150px;overflow-y:auto}
+  .ttlrow{display:flex;gap:6px;align-items:center;padding:5px 7px;border:1px solid var(--line);border-radius:4px;
+          background:var(--panel2);font:600 11px/1 var(--mono);color:var(--dim);cursor:pointer}
+  .ttlrow:hover{border-color:var(--faint);color:var(--ink)}
+  .ttlrow .nm{flex:1;color:var(--ink)}
+  .ttlrow .rev{color:var(--confuser);font-size:9px}
+  .ttlrow .cts{color:var(--faint)}
+  /* scorecard */  .card{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:14px 16px;margin-bottom:18px}
+  .card .lbl{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tp);margin-bottom:4px}
+  table{width:100%;border-collapse:collapse;font:500 12px/1 var(--mono);margin-top:10px}
+  th,td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--faint);font-weight:600;letter-spacing:.05em;text-transform:uppercase;font-size:10px}
+  td.p{color:var(--tp)} td.r{color:var(--accent)} td.f{color:var(--target)}
+  tr.cur td:first-child{color:var(--ink);font-weight:700}
+  tr.cur td:first-child::before{content:"› "}
+  .muted{color:var(--faint)}
+
+  .full{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:14px 16px}
+  .full .top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px;flex-wrap:wrap}
+  .full .top .lbl{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  .full .actions{display:flex;gap:8px;align-items:center}
+  .full .actions button{width:auto}
+  .bar{height:5px;border-radius:3px;background:#0c141a;overflow:hidden;margin-bottom:12px}
+  .bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .12s}
+  .overview-host{position:relative;line-height:0;border:1px solid var(--line);border-radius:4px;overflow:hidden;text-align:center;background:#0a1015}
+  .overview-host canvas{max-width:100%;height:auto;display:inline-block}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 2px;font:600 12px/1 var(--mono)}
+  .legend span{display:inline-flex;align-items:center;gap:6px;color:var(--dim)}
+  .legend .sw{width:11px;height:11px;border-radius:3px}
+  .status{font:500 12px/1 var(--mono);color:var(--dim)} .status b{color:var(--ink)}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--faint);border-top-color:var(--accent);
+        border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Doodle<span>·</span>Detector</h1>
+  <div class="meta" id="meta">initialising…</div>
+</header>
+
+<div class="wrap">
+  <aside>
+    <!-- DETECTORS (each detector = one object class) -->
+    <div class="block">
+      <div class="lbl"><span>Detectors</span><span id="imgTag" class="muted"></span></div>
+      <div id="detList" class="detlist"></div>
+      <div class="field">
+        <input type="text" id="detName" placeholder="new class e.g. tank">
+        <button class="btn" id="newBtn">+ New</button>
+      </div>
+      <div class="split-actions">
+        <button class="ghost" id="saveBtn">Save active</button>
+        <button class="ghost" id="loadBtn">Load…</button>
+      </div>
+      <div class="field" id="loadRow" style="margin-top:7px;display:none">
+        <select id="loadSel"></select>
+        <button class="btn" id="loadGo">Go</button>
+      </div>
+      <div class="mem" style="margin-top:10px">
+        <div><span class="vt" id="mPos">0</span><small>TGT</small></div>
+        <div><span class="vf" id="mConf">0</span><small>CNF</small></div>
+        <div><span class="vg" id="mNeg">0</span><small>BG</small></div>
+        <div><span class="vk" id="mTiles">0</span><small>TILES</small></div>
+        <div><span class="vi" id="mImgs">0</span><small>IMGS</small></div>
+      </div>
+      <div class="hint" style="margin-top:8px">The <b>active</b> detector (highlighted) is the one your doodles train. Add a class per object type; counts above are the active one.</div>
+      <details id="tilesBox" style="margin-top:8px"><summary class="ttlsum">Training tiles (<span id="ttlN">0</span>)</summary><div id="ttlList" class="ttllist"></div></details>
+    </div>
+
+    <!-- IMAGE -->
+    <div class="block">
+      <div class="lbl"><span>Image</span><span id="imgCount" class="muted"></span></div>
+      <select id="imgSel" title="switch between images loaded this session" style="margin-bottom:7px"></select>
+      <div class="field">
+        <button class="btn" id="uploadBtn">Upload image…</button>
+        <input type="text" id="gsdIn" placeholder="GSD" style="max-width:78px" title="metres/pixel (optional)">
+      </div>
+      <input type="file" id="fileIn" accept="image/*,.tif,.tiff" hidden>
+      <div class="field">
+        <input type="text" id="imgPath" placeholder="…or a server-side path">
+        <button class="btn ghost" id="imgGo">Load</button>
+      </div>
+      <div class="lbl" style="margin:14px 0 9px"><span>Scene overview</span><span id="tileTag"></span></div>
+      <div class="mini" id="mini"><canvas id="miniCv"></canvas></div>
+      <div class="hint" style="margin-top:7px">Click a cell to load it as your work tile.</div>
+    </div>
+
+    <!-- BRUSH -->
+    <div class="block">
+      <div class="lbl">Doodle brush</div>
+      <div class="tools" id="tools">
+        <div class="tool on" data-k="target"><span class="dot"></span>Target</div>
+        <div class="tool" data-k="confuser"><span class="dot"></span>Confuser</div>
+        <div class="tool" data-k="background"><span class="dot"></span>Background</div>
+        <div class="tool" data-k="erase"><span class="dot"></span>Erase</div>
+      </div>
+      <div class="row" style="margin-top:11px">
+        <label>Brush</label><input type="range" id="brush" min="4" max="40" value="14"><output id="brushO">14</output>
+      </div>
+      <div class="hint" id="brushInfo" style="margin-top:4px">Brush footprint shown once a tile is loaded.</div>
+      <label class="toggle" style="margin-top:8px;display:flex;gap:7px;align-items:center;cursor:pointer;color:var(--dim);font-weight:600">
+        <input type="checkbox" id="gridTog"> Show patch grid</label>
+    </div>
+
+    <!-- DETECTION CONTROLS -->
+    <div class="block">
+      <div class="lbl">Detection controls</div>
+      <div class="row"><label>Feat. density</label>
+        <select id="density" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:6px 8px;font:600 12px/1 var(--mono)">
+          <option value="1">1× — fast</option><option value="2">2× — finer</option><option value="3">3× — finest</option>
+        </select><output id="densityO" style="min-width:64px"></output></div>
+      <div class="row"><label>Threshold</label><input type="range" id="th" min="0.05" max="0.95" step="0.01" value="0.6"><output id="thO">0.60</output></div>
+      <div class="row"><label>Min cells</label><input type="range" id="minc" min="1" max="12" step="1" value="2"><output id="mincO">2</output></div>
+      <div class="row"><label>Max cells</label><input type="range" id="maxc" min="20" max="1200" step="10" value="600"><output id="maxcO">600</output></div>
+      <div class="row"><label>Merge parts</label><input type="range" id="merge" min="0" max="6" step="1" value="1"><output id="mergeO">1</output></div>
+      <div class="row"><label>Heat opacity</label><input type="range" id="op" min="0" max="1" step="0.05" value="0.55"><output id="opO">0.55</output></div>
+    </div>
+
+    <div class="block">
+      <button id="trainBtn" disabled>Train detector</button>
+      <div class="split-actions">
+        <button class="ghost" id="clearBtn">Clear doodles</button>
+        <button class="ghost" id="applyBtn" disabled>Apply here</button>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="banner" id="banner"></div>
+
+    <div class="topbar">
+      <div class="modes" id="modes">
+        <button data-m="draw" class="on">Draw examples</button>
+        <button data-m="review">Review predictions</button>
+      </div>
+      <span class="status" id="modeStat"><button class="ghost" id="previewBtn" style="width:auto;padding:7px 12px" disabled>Preview all classes on tile</button></span>
+    </div>
+
+    <div class="stage">
+      <div class="pane" id="doodlePane">
+        <div class="head"><span>Your doodles</span><span class="k" id="dSub">— pick a tile</span></div>
+        <div class="canvas-host" id="dHost"><div class="empty" id="dEmpty">Select a work tile from the overview to begin.</div></div>
+      </div>
+      <div class="pane" id="predPane">
+        <div class="head"><span>Prediction</span><span class="k" id="pSub"></span></div>
+        <div class="canvas-host" id="pHost"><div class="empty" id="pEmpty">Train, or Apply an existing detector, to see predictions.</div></div>
+      </div>
+    </div>
+    <p class="hint" id="modeHint"><b>Draw examples.</b> Paint targets, confusers and background on the left, then press Train detector. Detections are patch-grid aligned, so localisation is ±1 patch (14px) — see the header for the ground size.</p>
+
+    <div class="card">
+      <div class="lbl">Performance scorecard</div>
+      <div class="status">Marks come from <b>Review predictions</b> mode. Rows aggregate per image, so the same detector's rows show how it generalises. Tip: to measure honestly, review a fresh image and read the numbers <b>before</b> you Train on it — training folds those marks in.</div>
+      <table id="scoreTbl"><thead><tr><th>Image</th><th>TP</th><th>FP</th><th>FN</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody id="scoreBody"><tr><td colspan="7" class="muted">No marks yet.</td></tr></tbody></table>
+      <div style="margin-top:10px;text-align:right"><button class="ghost" id="resetScores" style="width:auto">Reset scores</button></div>
+      <div id="iterWrap" style="display:none;margin-top:14px">
+        <div class="lbl" style="color:var(--target)">Retrain iterations · <span id="iterImg" class="muted"></span></div>
+        <table id="iterTbl"><thead><tr><th>#</th><th>TP</th><th>FP</th><th>FN</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody id="iterBody"></tbody></table>
+      </div>
+    </div>
+
+    <div class="full">
+      <div class="top">
+        <span class="lbl">Full image</span>
+        <div class="actions">
+          <span class="status" id="fullStatus">Train or apply a detector, then run on the whole image.</span>
+          <button class="btn-amber" id="fullBtn" disabled>Run on full image</button>
+          <button class="ghost" id="retrainBtn" disabled title="Fold your review marks into the detector and re-run">Retrain from marks</button>
+          <button class="ghost" id="clearReviewBtn" disabled>Clear marks</button>
+          <button class="ghost" id="exportBtn" disabled>Export JSON</button>
+        </div>
+      </div>
+      <div class="runsel"><span class="runlbl">Run classes:</span><span id="runList"></span></div>
+      <div class="bar"><i id="fullBar"></i></div>
+      <div class="legend" id="ovLegend"></div>
+      <p class="hint" id="ovHint" style="display:none"><b>Review predictions</b> is on — you can mark on this full image too: click a box to cycle correct/false, click empty ground for a miss. Marks feed the active class's scorecard as a whole-image measurement.</p>
+      <div class="overview-host" id="ovHost"><canvas id="ovCv"></canvas></div>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const api = async (path, body) => (await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})})).json();
+
+const CLR = {target:"#f5a623",confuser:"#e879f9",background:"#38bdf8"};
+const state = {
+  scene:null, tile:null, tileImg:null, scale:1,
+  brush:"target", brushSize:14, mode:"draw",
+  marks:[],                 // {cls,x,y} tile-px  (current tile only)
+  heatImg:null, boxes:[],
+  boxMarks:{}, fnPoints:[],  // scoring for current tile
+  detections:[],
+  multi:null, active:"", detectors:[],
+  marksByKey:{}, iterHist:{}, showGrid:false,
+  fullMarks:{}, fullFN:[], ranFull:false, ovImg:null, ovImgSrc:"",
+};
+
+/* ---------- scene / minimap ---------- */
+async function loadScene(){
+  const s = await fetch("/api/scene").then(r=>r.json());
+  state.scene = s;
+  $("imgTag").textContent = s.backbone || "";
+  updateMeta();
+  if(!s.ready){                       // booted with no image yet
+    blankCanvas("miniCv"); blankCanvas("ovCv"); clearWorkPanes();
+    return;
+  }
+  drawMinimap(); drawOverview(null);
+  clearWorkPanes();
+}
+function blankCanvas(id){ const cv=$(id); const ctx=cv.getContext("2d"); if(cv.width) ctx.clearRect(0,0,cv.width,cv.height); }
+function updateMeta(){
+  const s = state.scene; if(!s) return;
+  if(!s.ready){
+    $("meta").innerHTML = `backbone <b>${s.backbone}</b> · <b>no image loaded</b> — upload or load one to begin`;
+    return;
+  }
+  const imgName = state.imageName ? `image <b>${state.imageName}</b> · ` : "";
+  const base = s.base_stride||s.stride, dens = s.density||1, cellM = s.stride*s.gsd_m;
+  const densStr = dens>1 ? ` · density <b>${dens}×</b>` : "";
+  $("meta").innerHTML =
+    `${imgName}backbone <b>${s.backbone}</b> · `+
+    `<b>${s.width}×${s.height}px</b> · GSD <b>${s.gsd_m} m</b> · tile <b>${(s.tile_px*s.gsd_m/1000).toFixed(2)} km</b> (${s.tile_px}px) · `+
+    `patch <b>${base}px</b>${densStr} → cell <b>${s.stride}px</b> (~${cellM.toFixed(1)} m) · ${s.tiles.length} tiles`;
+  updateDensityReadout();
+}
+async function refreshImages(){
+  const d = await fetch("/api/images").then(r=>r.json());
+  state.imageName = d.current;
+  const sel = $("imgSel");
+  sel.innerHTML = d.images.map(i=>`<option${i.id===d.current?" selected":""}>${i.id}</option>`).join("") || "<option>(none)</option>";
+  $("imgCount").textContent = d.images.length>1 ? `${d.images.length} loaded` : "";
+  updateMeta();
+}
+function clearWorkPanes(){
+  state.tile=null; state.tileImg=null; state.marks=[]; state.heatImg=null; state.boxes=[];
+  state.boxMarks={}; state.fnPoints=[];
+  ["dHost","pHost"].forEach(h=>{ const el=$(h); el.innerHTML = h==="dHost"
+    ? '<div class="empty">Select a work tile from the overview to begin.</div>'
+    : '<div class="empty">Train, or Apply an existing detector, to see predictions.</div>'; });
+  $("dSub").textContent="— pick a tile"; $("pSub").textContent="";
+}
+function drawMinimap(){
+  const s=state.scene, cv=$("miniCv"), ctx=cv.getContext("2d"), img=new Image();
+  img.onload=()=>{ cv.width=s.overview_w; cv.height=s.overview_h; ctx.drawImage(img,0,0);
+    const sx=s.overview_w/s.width, sy=s.overview_h/s.height;
+    ctx.lineWidth=1; ctx.strokeStyle="rgba(45,212,191,.5)";
+    for(const t of s.tiles){ ctx.strokeRect(t.x*sx,t.y*sy,t.w*sx,t.h*sy);
+      if(state.tile&&t.id===state.tile.id){ ctx.fillStyle="rgba(245,166,35,.28)";
+        ctx.fillRect(t.x*sx,t.y*sy,t.w*sx,t.h*sy); ctx.strokeStyle="#f5a623"; ctx.lineWidth=2;
+        ctx.strokeRect(t.x*sx,t.y*sy,t.w*sx,t.h*sy); ctx.strokeStyle="rgba(45,212,191,.5)"; ctx.lineWidth=1; } } };
+  img.src=s.overview_png;
+}
+$("mini").addEventListener("click", e=>{
+  const s=state.scene; if(!s) return;
+  const cv=$("miniCv"), r=cv.getBoundingClientRect();
+  const px=(e.clientX-r.left)/r.width*s.width, py=(e.clientY-r.top)/r.height*s.height;
+  const t=s.tiles.find(t=>px>=t.x&&px<t.x+t.w&&py>=t.y&&py<t.y+t.h);
+  if(t) selectTile(t);
+});
+
+/* ---------- per-tile doodle overlay cache (session) ---------- */
+function markKey(tileId){ return `${state.active}::${state.imageName||"img"}::${tileId||state.tile?.id}`; }
+function saveMarks(){ if(state.tile) state.marksByKey[markKey()] = state.marks.map(m=>({...m})); }
+function restoreMarks(){ state.marks = (state.marksByKey[markKey()]||[]).map(m=>({...m})); }
+
+/* ---------- work tile ---------- */
+async function selectTile(t){
+  saveMarks();                                   // keep the tile you're leaving
+  state.tile=t; state.heatImg=null; state.boxes=[]; state.boxMarks={}; state.fnPoints=[]; state.multi=null;
+  restoreMarks();                                // bring back this tile's doodles if any
+  $("tileTag").textContent=t.id; $("dSub").textContent=`tile ${t.id} · ${t.w}×${t.h}px`;
+  drawMinimap(); if(state.scene && state.scene.ready) drawOverview(); banner(`Embedding tile ${t.id}… `,"ok",true);
+  const img=new Image();
+  img.onload=async()=>{
+    state.tileImg=img;
+    state.scale=Math.min(460/t.w,460/t.h,1.4);
+    setupCanvas("d"); setupCanvas("p"); renderDoodle(); renderPred(); updateBrushInfo();
+    const em=await api("/api/embed",{tile_id:t.id});
+    banner(`Tile ${t.id} ready · features ${em.grid_h}×${em.grid_w}×${em.dim}`,"ok");
+    $("trainBtn").disabled=false;
+    if(state.detectors.some(x=>x.trained)) $("previewBtn").disabled=false;
+    if(state.detTrained){ $("applyBtn").disabled=false; applyHere(); }  // auto-apply on new tile/image
+  };
+  img.src=`/api/tile/${t.id}.png`;
+}
+function setupCanvas(which){
+  const host=$(which+"Host"); host.querySelector(".empty")?.remove();
+  const t=state.tile, s=state.scale, w=Math.round(t.w*s), h=Math.round(t.h*s);
+  host.style.minHeight=(h+24)+"px";
+  let cv=host.querySelector("canvas"); if(!cv){cv=document.createElement("canvas");host.appendChild(cv);}
+  cv.width=w; cv.height=h; cv.style.width=w+"px"; cv.style.height=h+"px";
+  if(which==="d"){state.dCv=cv; bindDoodle(cv);} else {state.pCv=cv; bindPred(cv);}
+}
+function toTilePx(cv,e){ const r=cv.getBoundingClientRect();
+  return {x:(e.clientX-r.left)/r.width*state.tile.w, y:(e.clientY-r.top)/r.height*state.tile.h}; }
+
+/* ---------- doodling (left pane, draw mode only) ---------- */
+function bindDoodle(cv){
+  let down=false;
+  const add=e=>{ if(state.mode!=="draw") return; const p=toTilePx(cv,e);
+    if(state.brush==="erase"){ const rad=state.brushSize/state.scale;
+      state.marks=state.marks.filter(m=>Math.hypot(m.x-p.x,m.y-p.y)>rad); }
+    else state.marks.push({cls:state.brush,x:p.x,y:p.y,r:(state.brushSize/2)/state.scale});
+    renderDoodle(); };
+  cv.onpointerdown=e=>{down=true;cv.setPointerCapture(e.pointerId);add(e);};
+  cv.onpointermove=e=>{if(down)add(e);};
+  cv.onpointerup=()=>{down=false; saveMarks();}; cv.onpointercancel=()=>{down=false; saveMarks();};
+}
+/* ---------- prediction pane (review = mark predictions) ---------- */
+function bindPred(cv){
+  cv.onpointerdown=e=>{
+    if(!state.tile || state.mode!=="review") return;
+    const p=toTilePx(cv,e);
+    const idx=boxAt(p);
+    if(idx>=0){ const cur=state.boxMarks[idx];
+      state.boxMarks[idx]= cur==="tp"?"fp": cur==="fp"?undefined:"tp";
+      if(state.boxMarks[idx]===undefined) delete state.boxMarks[idx];
+    }else{                                  // empty ground: add a miss, or remove one nearby
+      const rad=12/state.scale;
+      const fi=state.fnPoints.findIndex(q=>Math.hypot(q.x-p.x,q.y-p.y)<rad);
+      if(fi>=0) state.fnPoints.splice(fi,1); else state.fnPoints.push(p);
+    }
+    renderPred(); sendScore();
+  };
+}
+function boxAt(p){ for(let i=0;i<state.boxes.length;i++){ const b=state.boxes[i];
+  if(p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h) return i; } return -1; }
+
+function drawPatchGrid(ctx,cv){
+  if(!state.showGrid || !state.scene) return;
+  const s=state.scale, step=state.scene.stride*s;
+  if(step<3) return;
+  ctx.save(); ctx.strokeStyle="rgba(45,212,191,.28)"; ctx.lineWidth=1;
+  for(let x=0;x<=cv.width;x+=step){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,cv.height); ctx.stroke(); }
+  for(let y=0;y<=cv.height;y+=step){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(cv.width,y); ctx.stroke(); }
+  ctx.restore();
+}
+function renderDoodle(){
+  const cv=state.dCv; if(!cv) return; const ctx=cv.getContext("2d"), s=state.scale;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(state.tileImg) ctx.drawImage(state.tileImg,0,0,cv.width,cv.height);
+  drawPatchGrid(ctx,cv);
+  for(const m of state.marks){ ctx.beginPath(); ctx.arc(m.x*s,m.y*s,(m.r||state.brushSize/2/s)*s,0,7);
+    ctx.fillStyle=CLR[m.cls]+"c0"; ctx.fill(); ctx.lineWidth=1; ctx.strokeStyle=CLR[m.cls]; ctx.stroke(); }
+}
+function renderPred(){
+  const cv=state.pCv; if(!cv) return; const ctx=cv.getContext("2d"), s=state.scale;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(state.tileImg) ctx.drawImage(state.tileImg,0,0,cv.width,cv.height);
+  drawPatchGrid(ctx,cv);
+  if(state.multi){                        // multi-class preview: colour-coded boxes
+    ctx.lineWidth=2; ctx.font="10px monospace";
+    for(const r of state.multi){ ctx.strokeStyle=r.color; ctx.fillStyle=r.color+"22";
+      for(const b of r.boxes){ ctx.fillRect(b.x*s,b.y*s,b.w*s,b.h*s); ctx.strokeRect(b.x*s,b.y*s,b.w*s,b.h*s); } }
+    return;
+  }
+  if(state.heatImg){ ctx.globalAlpha=parseFloat($("op").value); ctx.drawImage(state.heatImg,0,0,cv.width,cv.height); ctx.globalAlpha=1; }
+  ctx.lineWidth=2; ctx.font="10px monospace";
+  const FILL={tp:"rgba(74,222,128,.14)",fp:"rgba(251,113,133,.14)",_:"rgba(45,212,191,.10)"};
+  const LINE={tp:"#4ade80",fp:"#fb7185",_:"#2dd4bf"};
+  state.boxes.forEach((b,i)=>{
+    const mk=state.boxMarks[i]||"_";
+    ctx.strokeStyle=LINE[mk]; ctx.fillStyle=FILL[mk];
+    ctx.fillRect(b.x*s,b.y*s,b.w*s,b.h*s); ctx.strokeRect(b.x*s,b.y*s,b.w*s,b.h*s);
+    ctx.fillStyle=LINE[mk]; ctx.fillText(b.score.toFixed(2),b.x*s+2,b.y*s-3);
+  });
+  // FN markers
+  ctx.strokeStyle="#fbbf24"; ctx.lineWidth=2;
+  for(const p of state.fnPoints){ const x=p.x*s,y=p.y*s;
+    ctx.beginPath(); ctx.moveTo(x-6,y-6);ctx.lineTo(x+6,y+6);ctx.moveTo(x+6,y-6);ctx.lineTo(x-6,y+6); ctx.stroke(); }
+  // echo confuser marks
+  for(const m of state.marks){ if(m.cls!=="confuser") continue;
+    ctx.beginPath(); ctx.arc(m.x*s,m.y*s,5,0,7); ctx.strokeStyle=CLR.confuser; ctx.lineWidth=2; ctx.stroke(); }
+}
+
+/* ---------- params / train / apply ---------- */
+const params=()=>({threshold:+$("th").value,min_cells:+$("minc").value,max_cells:+$("maxc").value,pad_px:0,merge_cells:+$("merge").value});
+const marksOf=c=>state.marks.filter(m=>m.cls===c).map(m=>({x:m.x,y:m.y,r:m.r||0}));
+
+async function train(){
+  if(!state.tile) return;
+  // start from the doodles painted on the left
+  const pos=marksOf("target"), bg=marksOf("background"), cf=marksOf("confuser");
+  // then fold in any corrections marked on the prediction (right) pane:
+  //   false box  -> confuser (a look-alike the model wrongly fired on)
+  //   missed spot -> target  (something it should have found)
+  //   correct box -> target  (reinforce a good detection)
+  let corr=0;
+  state.boxes.forEach((b,i)=>{ const mk=state.boxMarks[i]; if(!mk) return;
+    const c={x:b.x+b.w/2, y:b.y+b.h/2};
+    if(mk==="fp"){ cf.push(c); corr++; } else if(mk==="tp"){ pos.push(c); corr++; }
+  });
+  for(const p of state.fnPoints){ pos.push({x:p.x,y:p.y}); corr++; }
+
+  if(pos.length+bg.length+cf.length===0){
+    banner("Nothing to train on yet — draw examples, or review predictions and mark some.","err"); return; }
+  $("trainBtn").disabled=true; banner("Training… ","ok",true);
+  const res=await api("/api/train",{tile_id:state.tile.id,positives:pos,negatives:bg,confusers:cf,
+    conf_weight:3.0,params:params(),});
+  $("trainBtn").disabled=false;
+  if(!res.ok){ banner(res.error||"Train failed","err"); return; }
+  state.detTrained=true;
+  // corrections have been folded into training; clear them so the refreshed
+  // prediction can be reviewed fresh (the scorecard row keeps its last value)
+  state.boxMarks={}; state.fnPoints=[];
+  applyInfer(res); updateMemory(res); refreshDetectors();
+  const corrNote = corr ? ` (incl. ${corr} correction${corr>1?"s":""})` : "";
+  banner(`Trained${corrNote} · memory: ${res.n_pos} tgt / ${res.n_conf} cnf / ${res.n_neg} bg · ${res.n_tiles} tiles, ${res.n_images} image(s) · ${res.n_boxes} detections here`,"ok");
+  $("fullBtn").disabled=false; $("applyBtn").disabled=false;
+  $("fullStatus").textContent="Detector ready. Run on full image when set.";
+}
+async function applyHere(){   // run current detector on current tile without doodling
+  if(!state.tile||!state.detTrained) return;
+  const res=await api("/api/infer_tile",{tile_id:state.tile.id,params:params()});
+  if(res.ok){ state.boxMarks={}; state.fnPoints=[]; applyInfer(res); }
+}
+async function reinfer(){ if(!state.tile||!state.detTrained||!state.heatImg) return;
+  const res=await api("/api/infer_tile",{tile_id:state.tile.id,params:params()}); if(res.ok) applyInfer(res); }
+function applyInfer(res){ state.multi=null; state.boxes=res.boxes||[];
+  $("pSub").innerHTML=boxSizeLabel(state.boxes);
+  const img=new Image(); img.onload=()=>{state.heatImg=img; renderPred();}; img.src=res.heatmap_png; }
+function boxSizeLabel(boxes){
+  if(!boxes.length) return "0 boxes";
+  const gsd=state.scene?.gsd_m||0;
+  const med=a=>{const b=[...a].sort((x,y)=>x-y);return b[b.length>>1];};
+  const w=med(boxes.map(b=>b.w)), h=med(boxes.map(b=>b.h));
+  const m = gsd? ` (~${(w*gsd).toFixed(1)}×${(h*gsd).toFixed(1)} m)`:"";
+  return `${boxes.length} boxes · median ~<b>${w}×${h}px</b>${m}`;
+}
+
+/* ---------- detectors (multi-class) ---------- */
+function updateMemory(d){
+  $("mPos").textContent=d.n_pos; $("mConf").textContent=d.n_conf; $("mNeg").textContent=d.n_neg;
+  $("mTiles").textContent=d.n_tiles; $("mImgs").textContent=d.n_images;
+  renderScores(d.scores);
+  renderTrainTiles(d.tiles_detail||[]);
+  renderIterHistory();
+}
+function renderTrainTiles(rows){
+  $("ttlN").textContent=rows.length;
+  if(!rows.length){ $("ttlList").innerHTML='<div class="muted" style="font:500 11px/1.4 var(--mono);padding:4px 2px">None yet.</div>'; return; }
+  $("ttlList").innerHTML=rows.map(r=>`<div class="ttlrow" data-img="${r.image}" data-tile="${r.tile}">
+    <span class="nm">${r.tile}</span>${r.review?'<span class="rev">+rev</span>':''}
+    <span class="cts">${r.pos}/${r.conf}/${r.neg}</span></div>`).join("");
+}
+$("ttlList").addEventListener("click", e=>{
+  const row=e.target.closest(".ttlrow"); if(!row) return;
+  const img=row.dataset.img, tile=row.dataset.tile;
+  if((state.imageName||"img")!==img && img!=="demo_scene"){ banner(`That tile is on image “${img}” — switch to it first.`,"err"); return; }
+  const t=(state.scene?.tiles||[]).find(x=>x.id===tile);
+  if(t) selectTile(t); else banner("Tile not on the current image.","err");
+});
+async function refreshDetectors(){
+  const d=await fetch("/api/detectors").then(r=>r.json());
+  state.active=d.active; state.detectors=d.detectors;
+  const act=d.detectors.find(x=>x.name===d.active);
+  state.detTrained = !!(act && act.trained);
+  // sidebar list
+  $("detList").innerHTML = d.detectors.map(x=>`
+    <div class="detrow ${x.name===d.active?"on":""}" data-name="${x.name}">
+      <span class="sw" style="background:${x.color}"></span>
+      <span class="nm">${x.name}</span>
+      ${x.name===d.active?'<span class="badge">ACTIVE</span>':''}
+      <span class="ct">${x.n_pos}/${x.n_conf}/${x.n_neg}</span>
+      <span class="x" data-del="${x.name}" title="delete">✕</span>
+    </div>`).join("");
+  // run checkboxes (only trained detectors are runnable)
+  const prev=new Set([...document.querySelectorAll('#runList input:checked')].map(i=>i.value));
+  $("runList").innerHTML = d.detectors.map(x=>{
+    const on = x.trained && (prev.size? prev.has(x.name) : x.name===d.active);
+    return `<label class="chip ${on?"on":""}" ${x.trained?"":'style="opacity:.4"'}>
+      <input type="checkbox" value="${x.name}" ${on?"checked":""} ${x.trained?"":"disabled"}>
+      <span class="sw" style="background:${x.color}"></span>${x.name}</label>`;
+  }).join("") || '<span class="muted">none</span>';
+  if(act) updateMemory(act);
+  const anyTrained=d.detectors.some(x=>x.trained);
+  $("fullBtn").disabled=!anyTrained; $("previewBtn").disabled=!(anyTrained&&state.tile);
+  if(state.tile && state.detTrained) $("applyBtn").disabled=false;
+}
+$("detList").addEventListener("click", async e=>{
+  const del=e.target.closest(".x");
+  if(del){ e.stopPropagation(); const name=del.dataset.del;
+    await api("/api/detector/delete",{name}); await refreshDetectors();
+    banner(`Deleted detector “${name}”.`,"ok"); return; }
+  const row=e.target.closest(".detrow"); if(!row) return;
+  const name=row.dataset.name; if(name===state.active) return;
+  saveMarks();                                   // save current tile's doodles under the OLD active class
+  const d=await api("/api/detector/activate",{name});
+  state.active=d.active; state.detTrained=d.trained;
+  state.boxMarks={}; state.fnPoints=[]; state.heatImg=null; state.boxes=[];
+  restoreMarks(); renderDoodle();                // this class's doodles for the current tile
+  await refreshDetectors();
+  if(state.tile && d.trained){ applyHere(); } else renderPred();
+  banner(`Active detector: ${name}`,"ok");
+});
+$("newBtn").onclick=async()=>{ const name=$("detName").value.trim(); if(!name){banner("Name the new class first.","err");return;}
+  saveMarks();
+  const d=await api("/api/detector/new",{name}); $("detName").value="";
+  state.active=d.active; state.detTrained=false; state.heatImg=null; state.boxes=[]; state.boxMarks={}; state.fnPoints=[];
+  restoreMarks(); renderDoodle();
+  renderPred(); await refreshDetectors(); $("applyBtn").disabled=true;
+  banner(`New class “${name}” — draw examples and Train detector.`,"ok"); };
+$("saveBtn").onclick=async()=>{ const d=await api("/api/detector/save",{name:state.active});
+  if(d.ok) banner(`Saved detector “${d.saved}”.`,"ok"); else banner(d.error||"Save failed","err"); };
+$("loadBtn").onclick=async()=>{ const row=$("loadRow"); const show=row.style.display==="none";
+  row.style.display=show?"flex":"none"; if(show){ const l=await fetch("/api/detector/list").then(r=>r.json());
+    $("loadSel").innerHTML=l.detectors.length?l.detectors.map(n=>`<option>${n}</option>`).join(""):'<option value="">(none saved)</option>'; } };
+$("loadGo").onclick=async()=>{ const name=$("loadSel").value; if(!name) return;
+  const d=await api("/api/detector/load",{name}); if(!d.ok){banner(d.error,"err");return;}
+  state.active=d.active; state.detTrained=true; $("loadRow").style.display="none";
+  await refreshDetectors(); if(state.tile){$("applyBtn").disabled=false; applyHere();}
+  banner(`Loaded “${d.loaded}” · ${d.n_tiles} tiles from ${d.n_images} image(s).`,"ok"); };
+
+/* ---------- preview all classes on the current tile ---------- */
+function runNames(){ return [...document.querySelectorAll('#runList input:checked')].map(i=>i.value); }
+async function previewTile(){
+  if(!state.tile) return;
+  const names=runNames(); if(!names.length){ banner("Tick at least one class to run.","err"); return; }
+  banner("Running classes on tile… ","ok",true);
+  const res=await api("/api/infer_tile_multi",{tile_id:state.tile.id,names,params:params()});
+  if(!res.ok){ banner(res.error,"err"); return; }
+  state.multi=res.results; state.heatImg=null; renderPred();
+  const legend=res.results.map(r=>`<span style="color:${r.color}">■ ${r.name} (${r.n_boxes})</span>`).join("  ");
+  $("pSub").innerHTML=legend;
+  banner(`Previewed ${res.results.length} class(es) on this tile.`,"ok");
+}
+$("previewBtn").onclick=previewTile;
+
+/* ---------- image switching / upload ---------- */
+async function afterImageChange(res, verb){
+  state.imageName = res.image_id;
+  state.detections=[]; state.fullMarks={}; state.fullFN=[]; state.ranFull=false;
+  $("ovHint").style.display="none"; $("ovLegend").innerHTML="";
+  $("retrainBtn").disabled=true; $("clearReviewBtn").disabled=true; $("exportBtn").disabled=true;
+  await loadScene(); await refreshImages(); await refreshDetectors();
+  banner(`${verb} ${res.image_id} (${res.width}×${res.height}). Detectors kept — pick a tile.`,"ok");
+}
+async function loadImage(){
+  const path=$("imgPath").value.trim(); if(!path) return;
+  const gsd=parseFloat($("gsdIn").value);
+  banner("Loading image… ","ok",true);
+  const r=await api("/api/load_image",{path, gsd:isNaN(gsd)?null:gsd});
+  if(!r.ok){ banner(r.error,"err"); return; }
+  $("imgPath").value=""; afterImageChange(r,"Loaded");
+}
+$("imgGo").onclick=loadImage;
+$("uploadBtn").onclick=()=>$("fileIn").click();
+$("fileIn").onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const gsd=parseFloat($("gsdIn").value);
+  banner(`Uploading ${f.name}… `,"ok",true);
+  let url=`/api/upload_image?name=${encodeURIComponent(f.name)}`; if(!isNaN(gsd)) url+=`&gsd=${gsd}`;
+  let res; try{ res=await fetch(url,{method:"POST",body:f}).then(r=>r.json()); }
+  catch(err){ banner("Upload failed: "+err,"err"); return; }
+  e.target.value="";
+  if(!res.ok){ banner(res.error,"err"); return; }
+  afterImageChange(res,"Uploaded");
+};
+$("imgSel").onchange=async e=>{
+  const id=e.target.value; if(!id||id==="(none)"||id===state.imageName) return;
+  banner("Switching image… ","ok",true);
+  const r=await api("/api/select_image",{name:id});
+  if(!r.ok){ banner(r.error,"err"); return; }
+  afterImageChange(r,"Now on");
+};
+
+/* ---------- scoring ---------- */
+let _st;
+function sendScore(){ clearTimeout(_st); _st=setTimeout(async()=>{
+  const tp=Object.values(state.boxMarks).filter(v=>v==="tp").length;
+  const fp=Object.values(state.boxMarks).filter(v=>v==="fp").length;
+  const fn=state.fnPoints.length;
+  const res=await api("/api/score",{tile_id:state.tile.id,tp,fp,fn}); renderScores(res.scores);
+},120); }
+function renderScores(rows){
+  const b=$("scoreBody");
+  if(!rows||!rows.length){ b.innerHTML='<tr><td colspan="7" class="muted">No marks yet.</td></tr>'; return; }
+  b.innerHTML=rows.map(r=>{ const cur=(state.imageName||state.scene?.image_id)===r.image;
+    const f=v=>v===null||v===undefined?'<span class="muted">–</span>':v.toFixed(3);
+    const scope=r.scope==="full"?' <span class="muted">(full)</span>':'';
+    return `<tr class="${cur?'cur':''}"><td>${r.image}${scope}</td><td>${r.tp}</td><td>${r.fp}</td><td>${r.fn}</td>
+      <td class="p">${f(r.precision)}</td><td class="r">${f(r.recall)}</td><td class="f">${f(r.f1)}</td></tr>`;
+  }).join("");
+}
+$("resetScores").onclick=async()=>{ const r=await api("/api/reset_scores"); renderScores(r.scores); banner("Scores cleared.","ok"); };
+
+/* ---------- full image (multi-detector) ---------- */
+async function runFull(){
+  const names=runNames();
+  if(!names.length){ banner("Tick at least one class to run.","err"); return; }
+  state.fullMarks={}; state.fullFN=[]; state.ranFull=false;
+  $("fullBtn").disabled=true; $("exportBtn").disabled=true;
+  $("retrainBtn").disabled=true; $("clearReviewBtn").disabled=true;
+  $("fullStatus").innerHTML='<span class="spin"></span> running…'; $("fullBar").style.width="0%";
+  const t0=performance.now();
+  const r=await fetch("/api/infer_scene_multi",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({names,params:params()})});
+  const reader=r.body.getReader(), dec=new TextDecoder(); let buf="", running=0, ntiles=0;
+  while(true){ const {value,done}=await reader.read(); if(done) break; buf+=dec.decode(value,{stream:true});
+    let nl; while((nl=buf.indexOf("\n"))>=0){ const line=buf.slice(0,nl).trim(); buf=buf.slice(nl+1); if(!line) continue;
+      const m=JSON.parse(line);
+      if(m.type==="progress"){ running+=m.new_boxes; ntiles=m.total; $("fullBar").style.width=(100*m.done/m.total).toFixed(1)+"%";
+        $("fullStatus").innerHTML=`<span class="spin"></span> tile ${m.done}/${m.total} · ${running} detections`; }
+      else if(m.type==="done"){ state.detections=m.detections; $("fullBar").style.width="100%";
+        state.ranFull=true;
+        const secs=(performance.now()-t0)/1000, per=ntiles?secs/ntiles:secs;
+        // project to an 18km x 18km scene at this GSD & tile size
+        const gsd=state.scene.gsd_m, tpx=state.scene.tile_px;
+        const bigTiles=Math.pow(Math.ceil(18000/gsd/tpx),2);
+        const proj=per*bigTiles;
+        const projStr = proj>90 ? (proj/60).toFixed(1)+" min" : proj.toFixed(0)+" s";
+        const byc={}; m.detections.forEach(d=>byc[d.detector]=(byc[d.detector]||0)+1);
+        const leg=Object.entries(byc).map(([n,c])=>{ const col=(m.detections.find(d=>d.detector===n)||{}).color||"#2dd4bf";
+          return `<span style="color:${col}">■ ${n}: ${c}</span>`; }).join("  ");
+        $("fullStatus").innerHTML=`<b>${m.total_boxes}</b> detections · ${leg} · <span class="muted">${secs.toFixed(1)}s (${per.toFixed(2)}s/tile · ~${projStr} for 18×18 km)</span>`;
+        drawOverview(m.detections); $("exportBtn").disabled=m.total_boxes===0;
+        $("retrainBtn").disabled=false; $("clearReviewBtn").disabled=false; } } }
+  $("fullBtn").disabled=false;
+}
+async function retrainFromReview(){
+  if(!state.ranFull){ banner("Run on full image first.","err"); return; }
+  const fps=[],tps=[];
+  state.detections.forEach((d,i)=>{ const mk=state.fullMarks[i];
+    if(mk==="fp") fps.push({x:d.x,y:d.y,w:d.w,h:d.h,detector:d.detector});
+    else if(mk==="tp") tps.push({x:d.x,y:d.y,w:d.w,h:d.h,detector:d.detector}); });
+  const fns=state.fullFN.map(p=>({x:p.x,y:p.y}));
+  if(fps.length+tps.length+fns.length===0){ banner("Mark some false / missed / correct predictions first (Review mode).","err"); return; }
+  // snapshot THIS iteration's reviewed performance before folding marks in
+  recordIteration(tps.length, fps.length, fns.length);
+  banner("Folding your review marks into the detector… ","ok",true);
+  const r=await api("/api/retrain_from_review",{fps,tps,fns,active:state.active});
+  if(!r.ok){ banner(r.error||"Retrain failed","err"); return; }
+  updateMemory(r); await refreshDetectors();
+  banner(`Folded in ${r.n_fp} false, ${r.n_tp} correct, ${r.n_fn} missed → re-running to show the change…`,"ok");
+  await runFull();   // re-run to reveal whether predictions improved (clears marks for a fresh review)
+}
+function iterKey(){ return `${state.active}::${state.imageName||"img"}`; }
+function recordIteration(tp,fp,fn){
+  const k=iterKey(); const hist=state.iterHist[k]||(state.iterHist[k]=[]);
+  const prec=(tp+fp)?tp/(tp+fp):null, rec=(tp+fn)?tp/(tp+fn):null;
+  const f1=(prec&&rec)?2*prec*rec/(prec+rec):null;
+  hist.push({n:hist.length+1, tp, fp, fn, precision:prec, recall:rec, f1});
+  renderIterHistory();
+}
+function renderIterHistory(){
+  const k=iterKey(), hist=state.iterHist[k]||[];
+  if(!hist.length){ $("iterWrap").style.display="none"; return; }
+  $("iterWrap").style.display="block"; $("iterImg").textContent=`${state.active} on ${state.imageName||"scene"}`;
+  const f=v=>v===null||v===undefined?'<span class="muted">–</span>':v.toFixed(3);
+  $("iterBody").innerHTML=hist.map(r=>`<tr><td>${r.n}</td><td>${r.tp}</td><td>${r.fp}</td><td>${r.fn}</td>
+    <td class="p">${f(r.precision)}</td><td class="r">${f(r.recall)}</td><td class="f">${f(r.f1)}</td></tr>`).join("");
+}
+$("retrainBtn").onclick=retrainFromReview;
+$("clearReviewBtn").onclick=()=>{ state.fullMarks={}; state.fullFN=[]; drawOverview(); sendFullScore(); banner("Review marks cleared.","ok"); };
+function hexA(hex,a){ const n=parseInt(hex.slice(1),16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+function ensureOvImg(cb){
+  const src=state.scene.overview_png;
+  if(state.ovImg && state.ovImgSrc===src){ cb(); return; }
+  const img=new Image(); img.onload=()=>{ state.ovImg=img; state.ovImgSrc=src; cb(); }; img.src=src;
+}
+function drawOverview(dets){
+  const s=state.scene; if(!s||!s.ready) return;
+  if(dets!==undefined) state.detections = dets||[];
+  const cv=$("ovCv"), ctx=cv.getContext("2d");
+  ensureOvImg(()=>{
+    cv.width=s.overview_w; cv.height=s.overview_h; ctx.drawImage(state.ovImg,0,0);
+    const sx=s.overview_w/s.width, sy=s.overview_h/s.height;
+    // tile grid — the full image doubles as a work-tile picker
+    if(s.tiles){
+      ctx.lineWidth=1; ctx.strokeStyle="rgba(45,212,191,.35)";
+      for(const t of s.tiles) ctx.strokeRect(t.x*sx,t.y*sy,t.w*sx,t.h*sy);
+      if(state.tile){ const t=s.tiles.find(x=>x.id===state.tile.id);
+        if(t){ ctx.fillStyle="rgba(245,166,35,.18)"; ctx.fillRect(t.x*sx,t.y*sy,t.w*sx,t.h*sy);
+          ctx.strokeStyle="#f5a623"; ctx.lineWidth=2; ctx.strokeRect(t.x*sx,t.y*sy,t.w*sx,t.h*sy); } }
+    }
+    (state.detections||[]).forEach((d,i)=>{
+      const x=d.x*sx,y=d.y*sy,w=Math.max(d.w*sx,3),h=Math.max(d.h*sy,3);
+      const mk=state.fullMarks[i];
+      const col= mk==="tp"?"#4ade80": mk==="fp"?"#fb7185": (d.color||"#2dd4bf");
+      ctx.lineWidth= mk?2:1.5; ctx.strokeStyle=col; ctx.strokeRect(x,y,w,h);
+      ctx.fillStyle=hexA(col, mk?0.22:0.14); ctx.fillRect(x,y,w,h);
+    });
+    ctx.strokeStyle="#fbbf24"; ctx.lineWidth=2;
+    for(const p of state.fullFN){ const x=p.x*sx,y=p.y*sy;
+      ctx.beginPath(); ctx.moveTo(x-6,y-6);ctx.lineTo(x+6,y+6);ctx.moveTo(x+6,y-6);ctx.lineTo(x-6,y+6); ctx.stroke(); }
+    cv.style.cursor = (state.mode==="review" && state.ranFull) ? "crosshair" : "pointer";
+    renderLegend(); updateOvHint();
+  });
+}
+function updateOvHint(){
+  const el=$("ovHint"); if(!el) return;
+  if(!state.scene || !state.scene.ready){ el.style.display="none"; return; }
+  el.style.display="block";
+  if(state.mode==="review" && state.ranFull)
+    el.innerHTML="<b>Review predictions</b> is on — mark on this full image: click a box to cycle correct/false, click empty ground for a miss. Marks feed the active class's scorecard as a whole-image measurement.";
+  else
+    el.innerHTML="Tip: click any <b>tile</b> on the image below (or the thumbnail on the left) to load it as your work tile.";
+}
+function renderLegend(){
+  const byc={}; (state.detections||[]).forEach(d=>{ byc[d.detector]=d.color; });
+  let html=Object.entries(byc).map(([n,c])=>`<span><span class="sw" style="background:${c}"></span>${n}</span>`).join("");
+  if(state.mode==="review" && state.ranFull)
+    html+=`<span><span class="sw" style="background:#4ade80"></span>correct</span>`+
+          `<span><span class="sw" style="background:#fb7185"></span>false</span>`+
+          `<span><span class="sw" style="background:#fbbf24"></span>miss</span>`;
+  $("ovLegend").innerHTML=html;
+}
+/* overview click: pick a work tile — or, in Review mode after a run, mark predictions */
+$("ovCv").addEventListener("pointerdown", e=>{
+  const s=state.scene; if(!s||!s.ready) return;
+  const cv=$("ovCv"), r=cv.getBoundingClientRect();
+  const ox=(e.clientX-r.left)/r.width*cv.width, oy=(e.clientY-r.top)/r.height*cv.height;
+  const px=ox/(s.overview_w/s.width), py=oy/(s.overview_h/s.height);
+  if(state.mode==="review" && state.ranFull){        // score predictions
+    let hit=-1;
+    for(let i=0;i<state.detections.length;i++){ const d=state.detections[i];
+      if(px>=d.x&&px<=d.x+d.w&&py>=d.y&&py<=d.y+d.h){ hit=i; break; } }
+    if(hit>=0){ const cur=state.fullMarks[hit];
+      state.fullMarks[hit]= cur==="tp"?"fp": cur==="fp"?undefined:"tp";
+      if(state.fullMarks[hit]===undefined) delete state.fullMarks[hit];
+    } else {                                  // empty: add a miss, or remove one nearby
+      const sx=s.overview_w/s.width, sy=s.overview_h/s.height;
+      const fi=state.fullFN.findIndex(q=>Math.hypot(q.x*sx-ox,q.y*sy-oy)<8);
+      if(fi>=0) state.fullFN.splice(fi,1); else state.fullFN.push({x:px,y:py});
+    }
+    drawOverview(); sendFullScore();
+    return;
+  }
+  // otherwise: use the click to load a work tile
+  const t=(s.tiles||[]).find(t=>px>=t.x&&px<t.x+t.w&&py>=t.y&&py<t.y+t.h);
+  if(t) selectTile(t);
+});
+let _fst;
+function sendFullScore(){ clearTimeout(_fst); _fst=setTimeout(async()=>{
+  const names=[...new Set(state.detections.map(d=>d.detector))];
+  const tally={}; names.forEach(n=>tally[n]={tp:0,fp:0,fn:0});
+  Object.entries(state.fullMarks).forEach(([i,mk])=>{ const d=state.detections[i]; if(!d) return;
+    if(mk==="tp") tally[d.detector].tp++; else if(mk==="fp") tally[d.detector].fp++; });
+  if(!tally[state.active]) tally[state.active]={tp:0,fp:0,fn:0};
+  tally[state.active].fn += state.fullFN.length;
+  let activeScores=null;
+  for(const n of Object.keys(tally)){ const t=tally[n];
+    const res=await api("/api/score",{tile_id:"__full__",detector:n,tp:t.tp,fp:t.fp,fn:t.fn});
+    if(n===state.active) activeScores=res.scores;
+  }
+  if(activeScores) renderScores(activeScores);
+},150); }
+function exportJSON(){ const s=state.scene; const g=s.gsd_m||0;
+  const dets=state.detections.map(d=>({...d, w_px:d.w, h_px:d.h,
+    w_m:+(d.w*g).toFixed(2), h_m:+(d.h*g).toFixed(2)}));
+  const blob=new Blob([JSON.stringify({image:state.imageName||"scene",backbone:s.backbone,
+    gsd_m:s.gsd_m, patch_px:s.stride, patch_m:+(s.stride*g).toFixed(2),
+    classes:[...new Set(state.detections.map(d=>d.detector))],
+    count:dets.length,detections:dets},null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="detections.json"; a.click();
+}
+
+/* ---------- wiring ---------- */
+$("tools").addEventListener("click",e=>{ const t=e.target.closest(".tool"); if(!t) return; state.brush=t.dataset.k;
+  [...$("tools").children].forEach(x=>x.classList.toggle("on",x===t)); });
+$("modes").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; state.mode=b.dataset.m;
+  [...$("modes").children].forEach(x=>x.classList.toggle("on",x===b));
+  const hints={draw:"<b>Draw examples.</b> Paint targets, confusers and background on the left, then press Train detector.",
+    review:"<b>Review predictions.</b> On the right, click a box to mark it correct (green) or false (red); click a missed target on empty ground (amber ✕). This fills the scorecard — and when you press <b>Train detector</b>, false marks fold in as confusers, misses and correct marks as target examples."};
+  $("modeHint").innerHTML=hints[state.mode];
+  if(state.pCv) state.pCv.style.cursor = state.mode==="draw"?"default":"crosshair";
+  if(state.scene && state.scene.ready) drawOverview(); else updateOvHint(); });
+const bind=(id,fn)=>{ const el=$(id),o=$(id+"O");
+  el.addEventListener("input",()=>{ if(o) o.textContent=(el.step&&+el.step<1)?(+el.value).toFixed(2):el.value; fn&&fn(); }); };
+bind("brush",()=>{state.brushSize=+$("brush").value; updateBrushInfo();});
+function updateBrushInfo(){
+  const el=$("brushInfo"); if(!el||!state.scene||!state.scene.ready) return;
+  const stride=state.scene.stride, gsd=state.scene.gsd_m;
+  if(!state.tile){ el.textContent="Load a tile to see brush footprint."; return; }
+  const groundPx=state.brushSize/state.scale;          // brush diameter in tile pixels
+  const cells=Math.max(1,Math.round(groundPx/stride)); // patch cells spanned
+  el.innerHTML=`Brush footprint ≈ <b>${groundPx.toFixed(0)} px</b> (~${(groundPx*gsd).toFixed(1)} m) · covers ~<b>${cells}×${cells}</b> patch cell${cells>1?"s":""}`;
+}
+$("gridTog").onchange=e=>{ state.showGrid=e.target.checked; renderDoodle(); renderPred(); };
+bind("th",debounce(reinfer,180)); bind("minc",debounce(reinfer,180)); bind("maxc",debounce(reinfer,180)); bind("merge",debounce(reinfer,180)); bind("op",renderPred);
+function updateDensityReadout(){ const s=state.scene; if(!s) return;
+  $("densityO").textContent = `${(s.stride||14).toFixed(1)}px · ${((s.stride||14)*(s.gsd_m||0)).toFixed(1)}m`;
+  if($("density")) $("density").value = String(s.density||1); }
+$("density").onchange=async e=>{
+  const d=+e.target.value;
+  banner(`Re-embedding at ${d}× density${d>1?" (~"+d*d+"× slower)":""}… `,"ok",true);
+  const r=await api("/api/set_density",{density:d});
+  if(!r.ok){ banner("Density change failed","err"); return; }
+  // patch scene descriptors so header / grid / sampling reflect the new cell size
+  if(state.scene){ state.scene.density=r.density; state.scene.stride=r.cell_px; state.scene.base_stride=r.base_stride; }
+  updateMeta(); updateDensityReadout(); updateBrushInfo();
+  if(state.tile){
+    const em=await api("/api/embed",{tile_id:state.tile.id});   // recompute features at new density
+    renderDoodle(); renderPred();
+    if(state.detTrained) applyHere();
+    banner(`Now at ${d}× density · cell ~${r.cell_m} m · features ${em.grid_h}×${em.grid_w}. Retrain to use the finer grid.`,"ok");
+  } else banner(`Density set to ${d}× · cell ~${r.cell_m} m. Pick a tile.`,"ok");
+};
+$("trainBtn").onclick=train;
+$("applyBtn").onclick=applyHere;
+$("clearBtn").onclick=()=>{ state.marks=[]; saveMarks(); renderDoodle(); banner("Doodles cleared for this tile (detector memory kept).","ok"); };
+$("fullBtn").onclick=runFull; $("exportBtn").onclick=exportJSON;
+$("runList").addEventListener("change",e=>{ const chip=e.target.closest(".chip"); if(chip) chip.classList.toggle("on",e.target.checked); });
+let _t; function debounce(fn,ms){ return ()=>{clearTimeout(_t);_t=setTimeout(fn,ms);}; }
+function banner(msg,kind,spin){ const b=$("banner"); b.className="banner"+(kind==="err"?" err":""); b.style.display="block";
+  b.innerHTML=(spin?'<span class="spin"></span> ':'')+msg; }
+
+loadScene().then(refreshImages).then(refreshDetectors);
+</script>
+</body>
+</html>
